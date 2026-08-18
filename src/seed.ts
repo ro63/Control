@@ -63,19 +63,22 @@ const sections: ChecklistSection[] = [
   { id: "sec-saf", name: "ایمنی و حفاظت", active: true },
 ];
 
-const it = (id: string, title: string, sectionId: string, g: string, type: "boolean" | "numeric" = "boolean", unit?: string, min?: number, max?: number): ChecklistItem => ({
-  id, title, sectionId, type, unit, min, max, active: true, equipmentTypeIds: [g],
+const it = (id: string, title: string, sectionId: string, g: string, type: "boolean" | "numeric" = "boolean", unit?: string, min?: number, max?: number, onlyEquipmentIds: string[] = [], excludeEquipmentIds: string[] = []): ChecklistItem => ({
+  id, title, sectionId, type, unit, min, max, active: true, equipmentTypeIds: [g], onlyEquipmentIds, excludeEquipmentIds,
 });
 
 const items: ChecklistItem[] = [
   it("it-p1", "بررسی سطح روغن هیدرولیک", "sec-hyd", "g-press"),
   it("it-p2", "بررسی نشتی روغن از اتصالات و شلنگ‌ها", "sec-hyd", "g-press"),
-  it("it-p3", "فشار سیستم هیدرولیک", "sec-hyd", "g-press", "numeric", "bar", 180, 220),
+  // پرس عابدی مدل متفاوتی است و سنسور فشار دیجیتال ندارد → استثنای دستگاه خاص
+  it("it-p3", "فشار سیستم هیدرولیک", "sec-hyd", "g-press", "numeric", "bar", 180, 220, [], ["eq-p5"]),
   it("it-p4", "دمای روغن هیدرولیک", "sec-hyd", "g-press", "numeric", "°C", 30, 60),
   it("it-p5", "صدای غیرعادی و لرزش بدنه", "sec-mech", "g-press"),
   it("it-p6", "عملکرد سنسورها و لیمیت سوییچ‌ها", "sec-elec", "g-press"),
   it("it-p7", "جریان موتور اصلی", "sec-elec", "g-press", "numeric", "A", 20, 95),
   it("it-p8", "سلامت کنترل دو دستی و حفاظ‌ها", "sec-saf", "g-press"),
+  // فقط پرس ۲۰۰۰ تن سیستم خنک‌کاری قالب دارد → اختصاصی دستگاه خاص
+  it("it-p9", "سیستم خنک‌کاری قالب و دبی آب", "sec-mech", "g-press", "numeric", "L/min", 8, 15, ["eq-p4"]),
   it("it-r1", "بررسی آلارم‌های پنل کنترل", "sec-elec", "g-robot"),
   it("it-r2", "وضعیت کابل‌ها و دسته‌سیم‌ها", "sec-elec", "g-robot"),
   it("it-r3", "گریس‌کاری محورها و گیربکس", "sec-mech", "g-robot"),

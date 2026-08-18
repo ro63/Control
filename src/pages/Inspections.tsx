@@ -18,8 +18,15 @@ export function InspectionForm({ equipment, onSaved, onCancel }: { equipment: Eq
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const items = useMemo(
-    () => state.items.filter((i) => i.active && i.equipmentTypeIds.includes(equipment.typeId) && (user?.sectionAccess.length === 0 || user?.sectionAccess.includes(i.sectionId))),
-    [state.items, equipment.typeId, user]
+    () => state.items.filter((i) => {
+      if (!i.active) return false;
+      if (!i.equipmentTypeIds.includes(equipment.typeId)) return false;
+      if (i.onlyEquipmentIds.length > 0 && !i.onlyEquipmentIds.includes(equipment.id)) return false;
+      if (i.excludeEquipmentIds.includes(equipment.id)) return false;
+      if (user?.sectionAccess.length !== 0 && !user?.sectionAccess.includes(i.sectionId)) return false;
+      return true;
+    }),
+    [state.items, equipment.typeId, equipment.id, user]
   );
   const sections = state.sections.filter((s) => s.active && items.some((i) => i.sectionId === s.id));
 

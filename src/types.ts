@@ -60,6 +60,10 @@ export interface ChecklistItem {
   max?: number;
   active: boolean;
   equipmentTypeIds: string[]; // گروه‌های تجهیز مرتبط
+  /** فقط برای این تجهیزات خاص (خالی = همه تجهیزات گروه) */
+  onlyEquipmentIds: string[];
+  /** این تجهیزات استثنا شوند (مثلاً مدل متفاوت) */
+  excludeEquipmentIds: string[];
 }
 
 export interface RecordItem {

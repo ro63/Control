@@ -98,6 +98,16 @@ export function ChecklistsPage() {
                         ? <span className="text-[10px] font-bold bg-infobg text-info rounded-md px-1.5 py-0.5 num-ltr" dir="ltr">عددی {i.unit ? `(${i.unit})` : ""} {i.min !== undefined && i.max !== undefined ? `${faNum(i.min)}–${faNum(i.max)}` : ""}</span>
                         : <span className="text-[10px] font-bold bg-okbg text-ok rounded-md px-1.5 py-0.5">دوحالته OK / NOK</span>}
                       <span className="text-[10px] font-bold bg-paper border border-line text-steel rounded-md px-1.5 py-0.5">بخش {sec?.name ?? "—"}</span>
+                      {i.onlyEquipmentIds.length > 0 && (
+                        <span className="text-[10px] font-bold bg-info text-white rounded-md px-1.5 py-0.5" title={i.onlyEquipmentIds.map((id) => state.equipment.find((e) => e.id === id)?.name).join("، ")}>
+                          اختصاصی {faNum(i.onlyEquipmentIds.length)} دستگاه
+                        </span>
+                      )}
+                      {i.excludeEquipmentIds.length > 0 && (
+                        <span className="text-[10px] font-bold bg-warn text-white rounded-md px-1.5 py-0.5" title={i.excludeEquipmentIds.map((id) => state.equipment.find((e) => e.id === id)?.name).join("، ")}>
+                          استثنا {faNum(i.excludeEquipmentIds.length)} دستگاه
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {i.equipmentTypeIds.map((gid) => {
@@ -148,8 +158,10 @@ export function ChecklistsPage() {
 /* ================= item modal ================= */
 function ItemModal({ initial, onClose, onSave }: { initial: ChecklistItem | null; onClose: () => void; onSave: (i: ChecklistItem) => void }) {
   const { state } = useStore();
-  const [f, setF] = useState<ChecklistItem>(initial ?? { id: "", title: "", sectionId: state.sections[0]?.id ?? "", type: "boolean", unit: "", active: true, equipmentTypeIds: [] });
+  const [f, setF] = useState<ChecklistItem>(() => initial ?? { id: "", title: "", sectionId: state.sections[0]?.id ?? "", type: "boolean", unit: "", active: true, equipmentTypeIds: [], onlyEquipmentIds: [], excludeEquipmentIds: [] });
   const [tried, setTried] = useState(false);
+  const [scope, setScope] = useState<"all" | "only" | "exclude">(initial && initial.onlyEquipmentIds.length ? "only" : initial && initial.excludeEquipmentIds.length ? "exclude" : "all");
+  const eqInSelGroups = state.equipment.filter((e) => f.equipmentTypeIds.includes(e.typeId));
   const err = {
     title: !f.title.trim() ? "عنوان آیتم الزامی است" : "",
     groups: f.equipmentTypeIds.length === 0 ? "حداقل یک گروه تجهیز انتخاب کنید" : "",
@@ -197,6 +209,52 @@ function ItemModal({ initial, onClose, onSave }: { initial: ChecklistItem | null
             })}
           </div>
         </Field>
+
+        {/* گستره اختصاص: همه گروه / فقط دستگاه‌های خاص / استثنا دستگاه‌ها */}
+        <Field label="گستره اعمال در گروه‌های انتخابی">
+          <div className="inline-flex rounded-lg border border-line bg-paper p-0.5 gap-0.5 mb-2">
+            {([["all", "همه دستگاه‌های گروه"], ["only", "فقط دستگاه‌های خاص"], ["exclude", "همه به‌جز (استثنا)"]] as const).map(([id, l]) => (
+              <button key={id} type="button" onClick={() => setScope(id)}
+                className={`px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all ${scope === id ? "bg-navy text-white" : "text-mist hover:text-ink"}`}>{l}</button>
+            ))}
+          </div>
+          {scope !== "all" && (
+            <div className="anim-fade-up border border-line rounded-lg max-h-44 overflow-y-auto p-2.5 bg-card">
+              {eqInSelGroups.length === 0 ? (
+                <p className="text-[11.5px] font-semibold text-mist">ابتدا گروه تجهیز را انتخاب کنید تا دستگاه‌های آن فهرست شوند.</p>
+              ) : (
+                <div className="space-y-1">
+                  {state.groups.filter((g) => f.equipmentTypeIds.includes(g.id)).map((g) => (
+                    <div key={g.id}>
+                      <p className="text-[10.5px] font-bold text-mist mb-1 mt-1.5">{g.name}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {state.equipment.filter((e) => e.typeId === g.id).map((e) => {
+                          const arr = scope === "only" ? f.onlyEquipmentIds : f.excludeEquipmentIds;
+                          const on = arr.includes(e.id);
+                          return (
+                            <button key={e.id} type="button"
+                              onClick={() => {
+                                const next = on ? arr.filter((x) => x !== e.id) : [...arr, e.id];
+                                setF(scope === "only" ? { ...f, onlyEquipmentIds: next } : { ...f, excludeEquipmentIds: next });
+                              }}
+                              className={`text-[11px] font-bold rounded-md px-2 py-1 border transition-all active:scale-95 ${on ? (scope === "only" ? "bg-info text-white border-info" : "bg-warn text-white border-warn") : "bg-card border-line text-steel hover:border-acc"}`}>
+                              {e.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className={`text-[10.5px] font-semibold mt-2 ${scope === "only" ? "text-info" : "text-warn"}`}>
+                {scope === "only"
+                  ? `این آیتم فقط برای ${faNum(f.onlyEquipmentIds.length)} دستگاه انتخابی نمایش داده می‌شود.`
+                  : `این آیتم برای ${faNum(f.excludeEquipmentIds.length)} دستگاه انتخابی نمایش داده نمی‌شود (مثلاً مدل متفاوت).`}
+              </p>
+            </div>
+          )}
+        </Field>
         <div className="flex items-center justify-between bg-paper border border-line rounded-lg px-3.5 py-2.5">
           <span className="text-[12.5px] font-bold text-steel">آیتم فعال (در فرم نمایش داده شود)</span>
           <Toggle on={f.active} onChange={(v) => setF({ ...f, active: v })} />
@@ -204,7 +262,17 @@ function ItemModal({ initial, onClose, onSave }: { initial: ChecklistItem | null
       </div>
       <div className="flex justify-end gap-2 mt-5">
         <Btn variant="ghost" onClick={onClose}>انصراف</Btn>
-        <Btn onClick={() => { setTried(true); if (hasErr) return; onSave({ ...f, id: f.id || uid("it"), title: f.title.trim() }); }}><I name="check" size={15} />ذخیره آیتم</Btn>
+        <Btn onClick={() => {
+          setTried(true);
+          if (hasErr) return;
+          onSave({
+            ...f,
+            id: f.id || uid("it"),
+            title: f.title.trim(),
+            onlyEquipmentIds: scope === "only" ? f.onlyEquipmentIds : [],
+            excludeEquipmentIds: scope === "exclude" ? f.excludeEquipmentIds : [],
+          });
+        }}><I name="check" size={15} />ذخیره آیتم</Btn>
       </div>
     </Modal>
   );
