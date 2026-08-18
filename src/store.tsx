@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppState, ChecklistItem, ChecklistSection, Equipment, EquipmentGroup, InspectionRecord, Session, User, AppNotification, ActivityLog } from "./types";
+import type { AppState, ChecklistItem, ChecklistSection, Equipment, EquipmentGroup, FiscalYear, InspectionRecord, Session, User, AppNotification, ActivityLog } from "./types";
 import { buildSeed } from "./seed";
 import { hashPw, todayISO, uid } from "./utils";
 
-const DB_KEY = "nipco-db-v3";
+const DB_KEY = "nipco-db-v4";
 const SES_KEY = "nipco-session-v3";
 
 export type Perm =
@@ -26,6 +26,11 @@ interface StoreApi {
   session: Session | null;
   user: User | null;
   unread: number;
+  openYear: FiscalYear | null;
+  activeRecords: InspectionRecord[];
+  closeYear: () => FiscalYear | null;
+  restoreBackup: (data: AppState) => boolean;
+  markBackup: () => void;
   toasts: Toast[];
   toast: (msg: string, type?: Toast["type"]) => void;
   dismissToast: (id: string) => void;
@@ -83,6 +88,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return (ROLE_PERMS[user.role] ?? []).includes(p);
   }, [user]);
 
+  const openYear = useMemo(() => state.years.find((y) => y.status === "open") ?? null, [state.years]);
+  const openIds = useMemo(() => new Set(state.years.filter((y) => y.status === "open").map((y) => y.id)), [state.years]);
+  const activeRecords = useMemo(() => state.records.filter((r) => openIds.has(r.yearId)), [state.records, openIds]);
+
   const addLog = useCallback((action: string, detail: string) => {
     setState((s) => ({
       ...s,
@@ -128,9 +137,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /* بستن سال مالی (فقط مدیر) و ایجاد سال جدید */
+  const closeYear = useCallback((): FiscalYear | null => {
+    if (user?.role !== "admin") return null;
+    const open = state.years.find((y) => y.status === "open");
+    if (!open) return null;
+    const now = new Date().toISOString();
+    const next: FiscalYear = { id: `fy-${open.year + 1}`, year: open.year + 1, status: "open" };
+    setState((s) => ({
+      ...s,
+      years: [...s.years.map((y) => (y.id === open.id ? { ...y, status: "closed" as const, closedAt: now, closedBy: user.id } : y)), next],
+      notifications: [{ id: uid("ntf"), type: "info" as const, title: `سال ${open.year} بسته شد`, body: `سال مالی ${open.year} بسته و در بایگانی قرار گرفت. سال جدید ${open.year + 1} به‌عنوان سال کاری فعال شد. رکوردهای سال قبل فقط برای کاربران دارای دسترسی بایگانی قابل مشاهده است.`, channels: ["app", "email"] as ("app" | "sms" | "email")[], read: false, createdAt: now }, ...s.notifications].slice(0, 80),
+      logs: [{ id: uid("log"), userId: user.id, userName: user.fullName, action: "بستن سال مالی", detail: `سال ${open.year} بسته و سال ${open.year + 1} باز شد`, at: now }, ...s.logs].slice(0, 400),
+      lastBackup: now,
+    }));
+    return next;
+  }, [user, state.years]);
+
+  /* بازیابی نسخه پشتیبان */
+  const restoreBackup = useCallback((data: AppState): boolean => {
+    if (!data || typeof data !== "object") return false;
+    const required: (keyof AppState)[] = ["users", "equipment", "records", "years", "groups", "sections", "items"];
+    if (!required.every((k) => Array.isArray(data[k]))) return false;
+    setState({ ...data, notifications: Array.isArray(data.notifications) ? data.notifications : [], logs: Array.isArray(data.logs) ? data.logs : [], lastBackup: data.lastBackup ?? new Date().toISOString() });
+    return true;
+  }, []);
+
+  /* ثبت زمان پشتیبان‌گیری */
+  const markBackup = useCallback(() => setState((s) => ({ ...s, lastBackup: new Date().toISOString() })), []);
+
   const api: StoreApi = {
     state, session, user,
     unread: state.notifications.filter((n) => !n.read).length,
+    openYear, activeRecords, closeYear, restoreBackup, markBackup,
     toasts, toast, dismissToast, login, logout, can, addLog,
     saveUser: (u) => setState((s) => {
       const exists = s.users.some((x) => x.id === u.id);

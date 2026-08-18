@@ -28,6 +28,7 @@ const P: Record<string, ReactNode> = {
   video: <><rect x="3" y="6" width="13" height="12" rx="2" /><path d="M16 10.5l5-3v9l-5-3" /></>,
   printer: <><path d="M7 8V3h10v5" /><rect x="3" y="8" width="18" height="9" rx="1" /><path d="M7 14h10v7H7z" /></>,
   download: <><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 21h16" /></>,
+  upload: <><path d="M12 15V3" /><path d="M7 8l5-5 5 5" /><path d="M4 21h16" /></>,
   search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.5-4.5" /></>,
   chevron: <path d="M6 9l6 6 6-6" />,
   eye: <><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.8" /></>,

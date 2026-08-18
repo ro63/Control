@@ -1,5 +1,5 @@
-import type { AppState, ChecklistItem, ChecklistSection, Equipment, EquipmentGroup, InspectionRecord, RecordItem, User } from "./types";
-import { hashPw, mulberry32, toJalaali, uid } from "./utils";
+import type { AppState, ChecklistItem, ChecklistSection, Equipment, EquipmentGroup, FiscalYear, InspectionRecord, RecordItem, User } from "./types";
+import { hashPw, jalaliToISO, mulberry32, toJalaali, uid } from "./utils";
 import type { Shift } from "./utils";
 
 const IMG = {
@@ -115,6 +115,18 @@ const NOK_NOTES = [
 const pad = (n: number) => String(n).padStart(2, "0");
 const gISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+/* ---------------- سال‌های مالی ---------------- */
+const cy = toJalaali(new Date()).jy;
+const years: FiscalYear[] = [
+  { id: `fy-${cy - 2}`, year: cy - 2, status: "closed", closedAt: `${jalaliToISO(cy - 1, 1, 5)}T08:00:00`, closedBy: "u-admin" },
+  { id: `fy-${cy - 1}`, year: cy - 1, status: "closed", closedAt: `${jalaliToISO(cy, 1, 5)}T08:00:00`, closedBy: "u-admin" },
+  { id: `fy-${cy}`, year: cy, status: "open" },
+];
+const fyOf = (d: Date) => {
+  const id = `fy-${toJalaali(d).jy}`;
+  return years.some((y) => y.id === id) ? id : null;
+};
+
 function buildRecords(): InspectionRecord[] {
   const rnd = mulberry32(14040315);
   const out: InspectionRecord[] = [];
@@ -127,6 +139,8 @@ function buildRecords(): InspectionRecord[] {
   const nowH = new Date().getHours();
 
   const makeRecord = (eq: Equipment, date: Date, d: number) => {
+    const yearId = fyOf(date);
+    if (!yearId) return;
     const elecOnly = rnd() < 0.16;
     const tech = elecOnly ? "u-esfandiari" : techByGroup[eq.typeId];
     const pool = items.filter((x) => x.active && x.equipmentTypeIds.includes(eq.typeId) && (!elecOnly || x.sectionId === "sec-elec"));
@@ -147,13 +161,13 @@ function buildRecords(): InspectionRecord[] {
       }
       return { itemId: x.id, result: nok ? "nok" : "ok", note: nok ? pick(NOK_NOTES) : "", attachments: [] };
     });
-    const j = toJalaali(date);
     out.push({
       id: uid("rec"), equipmentId: eq.id, technicianId: tech, date: gISO(date), time, shift,
-      location: eq.location, items: recItems, jalaliYear: j.jy, createdAt: `${gISO(date)}T${time}:00`,
+      location: eq.location, items: recItems, yearId, createdAt: `${gISO(date)}T${time}:00`,
     });
   };
 
+  // رکوردهای سال جاری (۳۵ روز اخیر)
   for (let d = 34; d >= 0; d--) {
     const date = new Date();
     date.setHours(12, 0, 0, 0);
@@ -166,7 +180,7 @@ function buildRecords(): InspectionRecord[] {
       makeRecord(eq, date, d);
     }
   }
-  // رکوردهای سال قبل برای بایگانی
+  // رکوردهای بایگانی‌شده سال قبل
   for (let d = 340; d >= 300; d -= 2) {
     const date = new Date();
     date.setHours(12, 0, 0, 0);
@@ -174,6 +188,16 @@ function buildRecords(): InspectionRecord[] {
     for (const eq of active) {
       if (rnd() < 0.55) continue;
       makeRecord(eq, date, 30);
+    }
+  }
+  // رکوردهای بایگانی‌شده دو سال قبل
+  for (let d = 700; d >= 665; d -= 3) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - d);
+    for (const eq of active) {
+      if (rnd() < 0.75) continue;
+      makeRecord(eq, date, 60);
     }
   }
   return out;
@@ -186,20 +210,20 @@ export function buildSeed(): AppState {
   yesterdayD.setDate(yesterdayD.getDate() - 1);
   const yesterday = gISO(yesterdayD);
   return {
-    users, groups, equipment, sections, items, records,
+    users, groups, equipment, sections, items, records, years,
     notifications: [
       { id: uid("ntf"), type: "danger", title: "مورد معیوب در پرس ۲۰۰۰ تن", body: "فردین عظمیان مورد NOK در بازدید پرس هیدرولیک ۲۰۰۰ تن ثبت کرد. اقدام اصلاحی الزامی است.", channels: ["app", "sms", "email"], read: false, createdAt: `${today}T08:42:00` },
       { id: uid("ntf"), type: "warning", title: "بازدید معوق ربات ABB-03", body: "بازدید روزانه ربات ABB-03 در شیفت ۱ انجام نشده است. یادآوری به سرپرست نت ارسال شد.", channels: ["app", "sms"], read: false, createdAt: `${today}T07:15:00` },
       { id: uid("ntf"), type: "info", title: "تعمیرات برنامه‌ریزی‌شده", body: "PRS-1500 تا پایان هفته در وضعیت تعمیر قرار دارد. بازدید روزانه برای آن غیرفعال است.", channels: ["app"], read: true, createdAt: `${yesterday}T14:20:00` },
-      { id: uid("ntf"), type: "success", title: "پشتیبان‌گیری خودکار", body: "پشتیبان‌گیری خودکار از پایگاه داده با موفقیت انجام شد.", channels: ["app", "email"], read: true, createdAt: `${yesterday}T02:00:00` },
+      { id: uid("ntf"), type: "success", title: "پشتیبان‌گیری خودکار", body: "پشتیبان‌گیری خودکار روزانه از پایگاه داده با موفقیت انجام شد.", channels: ["app", "email"], read: true, createdAt: `${yesterday}T02:00:00` },
     ],
     logs: [
+      { id: uid("log"), userId: "u-admin", userName: "محمد روشندل", action: "بستن سال مالی", detail: `سال ${cy - 1} بسته و در بایگانی قرار گرفت`, at: `${jalaliToISO(cy, 1, 5)}T08:00:00` },
       { id: uid("log"), userId: "u-takhti", userName: "جعفر تختی", action: "ورود به سیستم", detail: "احراز هویت موفق", at: `${today}T06:05:00` },
       { id: uid("log"), userId: "u-azamian", userName: "فردین عظمیان", action: "ثبت بازدید", detail: "کنترل روزانه پرس هیدرولیک ۲۰۰۰ تن — شیفت ۱", at: `${today}T08:42:00` },
       { id: uid("log"), userId: "u-admin", userName: "محمد روشندل", action: "ویرایش چک‌لیست", detail: "افزودن آیتم «دمای کنترلر» به ربات‌های ABB", at: `${yesterday}T11:30:00` },
-      { id: uid("log"), userId: "u-admin", userName: "محمد روشندل", action: "مدیریت کاربران", detail: "تغییر سطح دسترسی حمید کریمی به تکنسین نت", at: `${yesterday}T10:12:00` },
       { id: uid("log"), userId: "u-takhti", userName: "جعفر تختی", action: "خروج از سیستم", detail: "پایان نشست کاربری", at: `${yesterday}T14:02:00` },
     ],
-    lastBackup: `${yesterday}T02:00:00`,
+    lastBackup: `${today}T02:00:00`,
   };
 }

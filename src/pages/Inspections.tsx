@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { Equipment, InspectionRecord, RecordItem } from "../types";
 import { useStore } from "../store";
 import { Btn, Confirm, Empty, EQ_STATUS, I, JalaliDateInput, Modal, OkNokSeg, ResultChip } from "../components/ui";
-import { compressImage, currentShift, faNum, fileToDataURL, formatDateJ, formatDateJLong, isoToJalali, jalaliToISO, monthStartISO, nowTime, SHIFTS, timeAgo, toJalaali, todayISO, uid, weekStartISO } from "../utils";
+import { compressImage, currentShift, faNum, fileToDataURL, formatDateJ, formatDateJLong, isoToJalali, jalaliToISO, monthStartISO, nowTime, SHIFTS, timeAgo, todayISO, uid, weekStartISO } from "../utils";
 
 type Att = RecordItem["attachments"][number];
 type Ans = { result: "ok" | "nok" | null; value: string; note: string; attachments: Att[] };
@@ -11,7 +11,7 @@ type Ans = { result: "ok" | "nok" | null; value: string; note: string; attachmen
    فرم کنترل روزانه (داینامیک بر اساس چک‌لیست و دسترسی کاربر)
    ============================================================ */
 export function InspectionForm({ equipment, onSaved, onCancel }: { equipment: Equipment; onSaved: () => void; onCancel?: () => void }) {
-  const { state, user, addRecord, addLog, pushNotif, toast } = useStore();
+  const { state, user, openYear, addRecord, addLog, pushNotif, toast } = useStore();
   const [location, setLocation] = useState(equipment.location);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -73,7 +73,7 @@ export function InspectionForm({ equipment, onSaved, onCancel }: { equipment: Eq
           value: i.type === "numeric" ? parseFloat(answers[i.id].value) : undefined,
           attachments: answers[i.id].attachments,
         })),
-        jalaliYear: toJalaali(new Date()).jy, createdAt: new Date().toISOString(),
+        yearId: openYear?.id ?? "", createdAt: new Date().toISOString(),
       };
       addRecord(rec);
       addLog("ثبت بازدید", `کنترل روزانه ${equipment.name} — ${SHIFTS[shift].name}`);
@@ -302,7 +302,7 @@ export function RecordModal({ record, onClose }: { record: InspectionRecord | nu
    صفحه فهرست بازدیدها
    ============================================================ */
 export function InspectionsPage({ goScan }: { goScan: () => void }) {
-  const { state, user, can, deleteRecord, addLog, toast } = useStore();
+  const { state, user, can, activeRecords, deleteRecord, addLog, toast } = useStore();
   const [fGroup, setFGroup] = useState("");
   const [fTech, setFTech] = useState("");
   const [fShift, setFShift] = useState("");
@@ -312,7 +312,7 @@ export function InspectionsPage({ goScan }: { goScan: () => void }) {
   const [del, setDel] = useState<InspectionRecord | null>(null);
 
   const rows = useMemo(() => {
-    let r = state.records;
+    let r = activeRecords;
     if (user?.role === "technician") r = r.filter((x) => x.technicianId === user.id);
     if (fDate) r = r.filter((x) => x.date === fDate);
     if (fGroup) r = r.filter((x) => state.equipment.find((e) => e.id === x.equipmentId)?.typeId === fGroup);
@@ -320,7 +320,7 @@ export function InspectionsPage({ goScan }: { goScan: () => void }) {
     if (fShift) r = r.filter((x) => x.shift === +fShift);
     if (fStatus) r = r.filter((x) => (fStatus === "nok" ? x.items.some((i) => i.result === "nok") : !x.items.some((i) => i.result === "nok")));
     return [...r].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [state, user, fGroup, fTech, fShift, fStatus, fDate]);
+  }, [state, activeRecords, user, fGroup, fTech, fShift, fStatus, fDate]);
 
   const quick = [
     { l: "امروز", v: todayISO() }, { l: "دیروز", v: (() => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })() },

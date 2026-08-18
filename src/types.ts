@@ -79,8 +79,16 @@ export interface InspectionRecord {
   shift: 1 | 2 | 3;
   location: string;
   items: RecordItem[];
-  jalaliYear: number;
+  yearId: string; // سال مالی ثبت
   createdAt: string;
+}
+
+export interface FiscalYear {
+  id: string;
+  year: number; // سال شمسی
+  status: "open" | "closed";
+  closedAt?: string;
+  closedBy?: string;
 }
 
 export interface AppNotification {
@@ -109,6 +117,7 @@ export interface AppState {
   sections: ChecklistSection[];
   items: ChecklistItem[];
   records: InspectionRecord[];
+  years: FiscalYear[];
   notifications: AppNotification[];
   logs: ActivityLog[];
   lastBackup: string;

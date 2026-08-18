@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import type { AppNotification } from "../types";
+import { useMemo, useRef, useState } from "react";
+import type { AppNotification, AppState, FiscalYear } from "../types";
 import { useStore } from "../store";
-import { Btn, Empty, EQ_STATUS, I, ResultChip } from "../components/ui";
-import { exportCSV, faNum, formatDateJ, formatDateJLong, SHIFTS, timeAgo, toJalaali } from "../utils";
+import { Btn, Confirm, Empty, EQ_STATUS, I, ResultChip } from "../components/ui";
+import { exportCSV, faNum, formatDateJ, formatDateJLong, SHIFTS, timeAgo, todayISO } from "../utils";
 
 /* ============================ اعلان‌ها ============================ */
 const NTF_META: Record<AppNotification["type"], { icon: "alert" | "flag" | "bell" | "check"; cls: string }> = {
@@ -98,8 +98,8 @@ export function LogsPage() {
                     <td className={`${td} whitespace-nowrap`}>{formatDateJ(l.at.slice(0, 10))} <span className="text-mist num-ltr">{faNum(l.at.slice(11, 16))}</span></td>
                     <td className={`${td} font-bold text-ink whitespace-nowrap`}>{l.userName}</td>
                     <td className={td}>
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold rounded-md px-2 py-0.5 ${isAuth ? "bg-infobg text-info" : l.action.includes("حذف") ? "bg-nokbg text-nok" : "bg-paper border border-line text-steel"}`}>
-                        <I name={isAuth ? "key" : l.action.includes("حذف") ? "trash" : "history"} size={11} />{l.action}
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold rounded-md px-2 py-0.5 ${isAuth ? "bg-infobg text-info" : l.action.includes("حذف") ? "bg-nokbg text-nok" : l.action.includes("سال") ? "bg-accbg text-accd" : "bg-paper border border-line text-steel"}`}>
+                        <I name={isAuth ? "key" : l.action.includes("حذف") ? "trash" : l.action.includes("سال") ? "archive" : "history"} size={11} />{l.action}
                       </span>
                     </td>
                     <td className={`${td} hidden sm:table-cell`}>{l.detail}</td>
@@ -111,71 +111,135 @@ export function LogsPage() {
         </div>
         {list.length === 0 && <Empty icon="list" title="رویدادی ثبت نشده" />}
       </div>
-      <p className="text-[11px] font-semibold text-mist mt-3 flex items-center gap-1.5"><I name="shield" size={13} />ورود و خروج کاربران، تغییرات تجهیزات، چک‌لیست‌ها و ثبت بازدیدها به‌صورت خودکار ثبت می‌شوند.</p>
+      <p className="text-[11px] font-semibold text-mist mt-3 flex items-center gap-1.5"><I name="shield" size={13} />ورود و خروج کاربران، تغییرات تجهیزات، چک‌لیست‌ها، ثبت بازدیدها و بستن سال مالی به‌صورت خودکار ثبت می‌شوند.</p>
     </div>
   );
 }
 
-/* ============================ بایگانی ============================ */
+/* ============================ بایگانی و سال مالی ============================ */
 export function ArchivePage() {
-  const { state, can, addLog, toast } = useStore();
-  const currentYear = toJalaali(new Date()).jy;
-  const years = useMemo(() => [...new Set(state.records.map((r) => r.jalaliYear))].filter((y) => y < currentYear).sort((a, b) => b - a), [state.records, currentYear]);
-  const [year, setYear] = useState<number | "">("");
-  const sel = year === "" ? years[0] : year;
+  const { state, can, user, openYear, closeYear, restoreBackup, markBackup, addLog, toast } = useStore();
+  const [selYear, setSelYear] = useState<string>("");
+  const [askClose, setAskClose] = useState(false);
+  const [askRestore, setAskRestore] = useState<AppState | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const isAdmin = user?.role === "admin";
+
+  const closedYears = useMemo(() => state.years.filter((y) => y.status === "closed").sort((a, b) => b.year - a.year), [state.years]);
+  const recsOf = (y: FiscalYear) => state.records.filter((r) => r.yearId === y.id);
+  const effectiveYear = closedYears.find((y) => y.id === selYear) ?? closedYears[0] ?? null;
 
   if (!can("archive.view")) {
     return (
       <div className="anim-fade-up bg-card border border-line rounded-xl max-w-xl mx-auto">
         <Empty icon="lock" title="دسترسی به بایگانی محدود است"
-          sub="دسترسی به رکوردهای سال‌های قبل توسط مدیر سیستم اعطا می‌شود. در صفحه کاربران، گزینه «دسترسی به بایگانی» را برای شما فعال کنند." />
+          sub="دسترسی به رکوردهای سال‌های قبل و عملیات بستن سال، توسط مدیر سیستم اعطا می‌شود. در صفحه کاربران، گزینه «دسترسی به بایگانی» را برای شما فعال کنند." />
       </div>
     );
   }
 
-  const recs = state.records.filter((r) => r.jalaliYear === sel);
+  const recs = effectiveYear ? recsOf(effectiveYear) : [];
   const nok = recs.flatMap((r) => r.items).filter((i) => i.result === "nok").length;
+
+  const downloadBackup = () => {
+    markBackup();
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `NIPCO-backup-${todayISO()}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    addLog("پشتیبان‌گیری دستی", "دانلود نسخه پشتیبان کامل پایگاه داده (JSON)");
+    toast("نسخه پشتیبان دانلود شد");
+  };
+
+  const onPickRestore = async (files: FileList | null) => {
+    if (!files || !files[0]) return;
+    try {
+      const txt = await files[0].text();
+      const data = JSON.parse(txt) as AppState;
+      setAskRestore(data);
+    } catch {
+      toast("فایل انتخابی یک نسخه پشتیبان معتبر نیست", "error");
+    }
+  };
 
   return (
     <div className="anim-fade-up">
-      <div className="grid lg:grid-cols-3 gap-4 mb-4">
-        <div className="lg:col-span-2 bg-navy blueprint text-white rounded-xl p-4 corner-frame">
-          <h3 className="font-display text-xl flex items-center gap-2"><I name="archive" size={19} className="text-acc" />بایگانی خودکار سالیانه</h3>
+      {/* ---------- سال مالی + پشتیبان‌گیری ---------- */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        {/* سال مالی */}
+        <div className="bg-navy blueprint text-white rounded-xl p-4 corner-frame flex flex-col">
+          <h3 className="font-display text-xl flex items-center gap-2"><I name="archive" size={19} className="text-acc" />سال مالی و بایگانی خودکار</h3>
           <p className="text-white/60 text-[12.5px] font-semibold leading-6 mt-1.5">
-            رکوردهای کنترل روزانه پس از پایان هر سال شمسی به‌صورت خودکار بایگانی می‌شوند. دسترسی به سال‌های قبل فقط برای کاربران مجاز ({faNum(state.users.filter((u) => u.role === "admin" || u.canArchive).length)} نفر) فعال است.
+            در پایان هر سال، مدیر سال جاری را می‌بندد و سال جدید باز می‌شود. رکوردهای سال‌های بسته‌شده در بایگانی قرار گرفته و فقط برای کاربران مجاز قابل مشاهده‌اند.
           </p>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {years.length === 0 && <span className="text-[11.5px] font-bold bg-white/8 border border-white/12 rounded-md px-2.5 py-1">هنوز سالِ بسته‌شده‌ای وجود ندارد</span>}
-            {years.map((y) => (
-              <button key={y} onClick={() => setYear(y)}
-                className={`text-[12px] font-bold rounded-lg px-3.5 py-1.5 border transition-all ${sel === y ? "bg-acc text-white border-acc" : "bg-white/8 border-white/15 hover:border-acc"}`}>
-                سال {faNum(y)} ({faNum(state.records.filter((r) => r.jalaliYear === y).length)} رکورد)
-              </button>
-            ))}
-          </div>
+          {openYear ? (
+            <div className="flex items-center justify-between bg-white/6 border border-white/12 rounded-lg px-4 py-3 mt-3">
+              <div>
+                <p className="font-display text-2xl text-acc leading-7">سال {faNum(openYear.year)}</p>
+                <p className="text-[11px] font-bold text-ok flex items-center gap-1 mt-0.5"><span className="w-1.5 h-1.5 rounded-full bg-ok live-dot" />سال کاری جاری (باز)</p>
+              </div>
+              {isAdmin && (
+                <Btn variant="outline" size="sm" onClick={() => setAskClose(true)} className="!text-white !border-white/30 hover:!border-acc hover:!text-acc">
+                  <I name="archive" size={14} />بستن سال و شروع سال جدید
+                </Btn>
+              )}
+            </div>
+          ) : (
+            <p className="text-warnbg text-[12px] font-bold mt-3">هیچ سال بازی وجود ندارد — با مدیر تماس بگیرید.</p>
+          )}
+          {!isAdmin && <p className="text-[10.5px] font-bold text-white/40 mt-2 flex items-center gap-1"><I name="lock" size={11} />بستن سال فقط توسط مدیر سیستم انجام می‌شود.</p>}
         </div>
+
+        {/* پشتیبان‌گیری */}
         <div className="bg-card border border-line rounded-xl p-4 flex flex-col">
-          <p className="text-[12.5px] font-bold text-steel flex items-center gap-1.5"><I name="refresh" size={15} className="text-ok" />پشتیبان‌گیری خودکار</p>
-          <p className="text-[11.5px] text-mist font-semibold leading-5 mt-1.5">آخرین نسخه پشتیبان: <b className="text-ink">{formatDateJLong(state.lastBackup.slice(0, 10))}</b> — ساعت <b className="num-ltr">{faNum(state.lastBackup.slice(11, 16))}</b></p>
-          <Btn variant="outline" size="sm" className="mt-auto self-start" onClick={() => { addLog("پشتیبان‌گیری", "تهیه نسخه پشتیبان دستی از پایگاه داده"); toast("نسخه پشتیبان با موفقیت تهیه شد"); }}>
-            <I name="download" size={14} />تهیه نسخه پشتیبان الآن
-          </Btn>
+          <p className="text-[13px] font-bold text-ink flex items-center gap-1.5"><I name="refresh" size={16} className="text-ok" />پشتیبان‌گیری (خودکار + دستی)</p>
+          <div className="mt-2 space-y-2 text-[11.5px] font-semibold text-steel">
+            <p className="flex items-center justify-between bg-okbg text-ok rounded-lg px-3 py-2"><span className="flex items-center gap-1.5"><I name="check" size={13} />خودکار — روزانه ساعت ۲ بامداد</span><span>فعال</span></p>
+            <p className="text-mist">آخرین نسخه پشتیبان: <b className="text-ink">{formatDateJLong(state.lastBackup.slice(0, 10))}</b> — ساعت <b className="num-ltr">{faNum(state.lastBackup.slice(11, 16))}</b></p>
+          </div>
+          {isAdmin && (
+            <div className="flex flex-wrap gap-2 mt-auto pt-3">
+              <Btn size="sm" variant="ok" onClick={downloadBackup}><I name="download" size={14} />دانلود نسخه پشتیبان</Btn>
+              <Btn size="sm" variant="outline" onClick={() => fileRef.current?.click()}><I name="upload" size={14} />بازیابی از فایل</Btn>
+              <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(e) => { onPickRestore(e.target.files); e.target.value = ""; }} />
+            </div>
+          )}
         </div>
       </div>
 
-      {years.length > 0 && sel ? (
+      {/* ---------- سال‌های بایگانی ---------- */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-[12px] font-bold text-mist flex items-center gap-1.5"><I name="archive" size={15} className="text-acc" />سال‌های بایگانی‌شده:</span>
+        {closedYears.length === 0 && <span className="text-[11.5px] font-bold bg-paper border border-line text-mist rounded-md px-2.5 py-1">هنوز سالی بسته نشده است</span>}
+        {closedYears.map((y) => {
+          const on = effectiveYear?.id === y.id;
+          return (
+            <button key={y.id} onClick={() => setSelYear(y.id)}
+              className={`text-[12px] font-bold rounded-lg px-3.5 py-1.5 border transition-all active:scale-95 ${on ? "bg-acc text-white border-acc shadow-md shadow-acc/25" : "bg-card border-line text-steel hover:border-acc hover:text-acc"}`}>
+              سال {faNum(y.year)} <span className={`font-semibold ${on ? "text-white/70" : "text-mist"}`}>({faNum(recsOf(y).length)} رکورد)</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {effectiveYear ? (
         <div className="bg-card border border-line rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-line">
-            <h4 className="font-display text-base text-ink">رکوردهای سال {faNum(sel)}</h4>
-            <div className="flex items-center gap-3">
-              <span className="text-[11.5px] font-bold text-mist">{faNum(recs.length)} بازدید • {faNum(nok)} مورد NOK</span>
-              <Btn size="sm" variant="ok" onClick={() => {
-                exportCSV(`NIPCO-archive-${sel}`, [["بایگانی کنترل روزانه NIPCO", `سال ${sel}`], [], ["تاریخ", "ساعت", "تجهیز", "تکنسین", "شیفت", "نتیجه"]].concat(
-                  recs.map((r) => [formatDateJ(r.date), r.time, state.equipment.find((e) => e.id === r.equipmentId)?.name ?? "—", state.users.find((u) => u.id === r.technicianId)?.fullName ?? "—", SHIFTS[r.shift].name, r.items.some((i) => i.result === "nok") ? "دارای خرابی" : "سالم"])
-                ));
-                toast(`خروجی سال ${faNum(sel)} دانلود شد`);
-              }}><I name="download" size={13} />Excel</Btn>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-line">
+            <div>
+              <h4 className="font-display text-base text-ink">رکوردهای سال {faNum(effectiveYear.year)}</h4>
+              <p className="text-[10.5px] font-semibold text-mist mt-0.5">
+                بسته‌شده در {formatDateJLong(effectiveYear.closedAt!.slice(0, 10))} توسط {state.users.find((u) => u.id === effectiveYear.closedBy)?.fullName ?? "مدیر"} • {faNum(recs.length)} بازدید • {faNum(nok)} مورد NOK
+              </p>
             </div>
+            <Btn size="sm" variant="ok" onClick={() => {
+              exportCSV(`NIPCO-archive-${effectiveYear.year}`, [["بایگانی کنترل روزانه NIPCO", `سال ${effectiveYear.year}`], [], ["تاریخ", "ساعت", "تجهیز", "تکنسین", "شیفت", "نتیجه"]].concat(
+                recs.map((r) => [formatDateJ(r.date), r.time, state.equipment.find((e) => e.id === r.equipmentId)?.name ?? "—", state.users.find((u) => u.id === r.technicianId)?.fullName ?? "—", SHIFTS[r.shift].name, r.items.some((i) => i.result === "nok") ? "دارای خرابی" : "سالم"])
+              ));
+              addLog("خروجی بایگانی", `Excel — سال ${effectiveYear.year}`);
+              toast(`خروجی سال ${faNum(effectiveYear.year)} دانلود شد`);
+            }}><I name="download" size={13} />Excel</Btn>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -184,11 +248,12 @@ export function ArchivePage() {
               </tr></thead>
               <tbody className="divide-y divide-line">
                 {recs.slice(0, 60).map((r) => {
+                  const eq = state.equipment.find((e) => e.id === r.equipmentId);
                   const isNok = r.items.some((i) => i.result === "nok");
                   return (
                     <tr key={r.id} className="hover:bg-paper/50 text-[12.5px] font-semibold text-steel">
                       <td className="px-3.5 py-2.5 num-ltr whitespace-nowrap">{formatDateJ(r.date)} <span className="text-mist">{faNum(r.time)}</span></td>
-                      <td className="px-3.5 py-2.5 font-bold text-ink">{state.equipment.find((e) => e.id === r.equipmentId)?.name ?? "حذف‌شده"} <span className="text-[10.5px] text-mist">({EQ_STATUS[state.equipment.find((e) => e.id === r.equipmentId)?.status ?? "inactive"].label})</span></td>
+                      <td className="px-3.5 py-2.5 font-bold text-ink">{eq?.name ?? "حذف‌شده"} <span className="text-[10.5px] text-mist">({EQ_STATUS[eq?.status ?? "inactive"].label})</span></td>
                       <td className="px-3.5 py-2.5 hidden sm:table-cell">{state.users.find((u) => u.id === r.technicianId)?.fullName ?? "—"}</td>
                       <td className="px-3.5 py-2.5">{SHIFTS[r.shift].name}</td>
                       <td className="px-3.5 py-2.5"><ResultChip r={isNok ? "nok" : "ok"} small /></td>
@@ -199,10 +264,33 @@ export function ArchivePage() {
             </table>
           </div>
           {recs.length > 60 && <p className="text-center text-[11px] font-bold text-mist py-2.5 border-t border-line">{faNum(recs.length - 60)} رکورد دیگر — خروجی Excel شامل همه است</p>}
+          {recs.length === 0 && <Empty icon="archive" title="رکوردی در این سال ثبت نشده" />}
         </div>
       ) : (
-        <div className="bg-card border border-line rounded-xl"><Empty icon="archive" title="بایگانی‌ای موجود نیست" sub="با پایان سال جاری، رکوردها به‌صورت خودکار اینجا بایگانی می‌شوند." /></div>
+        <div className="bg-card border border-line rounded-xl"><Empty icon="archive" title="بایگانی‌ای موجود نیست" sub="با بستن سال جاری توسط مدیر، رکوردها به‌صورت خودکار اینجا بایگانی می‌شوند." /></div>
       )}
+
+      {/* ---------- مودال بستن سال ---------- */}
+      <Confirm open={askClose} onClose={() => setAskClose(false)} yesLabel="بله، سال بسته شود"
+        onYes={() => {
+          const next = closeYear();
+          setAskClose(false);
+          if (next) { setSelYear(""); toast(`سال بسته شد — سال ${faNum(next.year)} فعال شد`); }
+          else toast("خطا در بستن سال", "error");
+        }}
+        title={`بستن سال ${openYear ? faNum(openYear.year) : ""} و شروع سال جدید`}
+        body={`سال مالی ${openYear ? faNum(openYear.year) : ""} بسته شده و همه رکوردهای آن به بایگانی منتقل می‌شود (فقط کاربران دارای دسترسی بایگانی آن را می‌بینند). سال جدید ${openYear ? faNum(openYear.year + 1) : ""} به‌عنوان سال کاری باز می‌شود. قبل از بستن، یک نسخه پشتیبان دانلود کنید. این عملیات فقط توسط مدیر قابل انجام است.`} />
+
+      {/* ---------- مودال بازیابی ---------- */}
+      <Confirm open={!!askRestore} onClose={() => setAskRestore(null)} yesLabel="بله، بازیابی شود"
+        onYes={() => {
+          const ok = askRestore ? restoreBackup(askRestore) : false;
+          setAskRestore(null);
+          if (ok) { addLog("بازیابی نسخه پشتیبان", "بازگردانی کامل پایگاه داده از فایل پشتیبان"); toast("نسخه پشتیبان با موفقیت بازیابی شد"); }
+          else toast("فایل پشتیبان نامعتبر است", "error");
+        }}
+        title="بازیابی نسخه پشتیبان"
+        body="همه داده‌های فعلی (کاربران، تجهیزات، چک‌لیست‌ها و بازدیدها) با محتوای فایل پشتیبان جایگزین می‌شود. این عملیات قابل بازگشت نیست. ادامه می‌دهید؟" />
     </div>
   );
 }

@@ -66,7 +66,7 @@ function CameraScan({ onDetect }: { onDetect: (code: string) => void }) {
 
 /* ---------------- صفحه اسکن ---------------- */
 export function ScanPage({ preselect, onExit }: { preselect: string; onExit: () => void }) {
-  const { state, user, addLog, toast } = useStore();
+  const { state, user, activeRecords, addLog, toast } = useStore();
   const [found, setFound] = useState<Equipment | null>(null);
   const [mode, setMode] = useState<"detect" | "form">("detect");
   const [tab, setTab] = useState<"camera" | "manual" | "list">("manual");
@@ -101,8 +101,8 @@ export function ScanPage({ preselect, onExit }: { preselect: string; onExit: () 
   /* ---- دسترسی کاربر به فرم این گروه ---- */
   const formAllowed = !!(user && (user.formAccess.length === 0 || (found && user.formAccess.includes(found.typeId))));
   const groupOf = found ? state.groups.find((g) => g.id === found.typeId) : null;
-  const lastRec = found ? state.records.filter((r) => r.equipmentId === found.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : null;
-  const doneToday = found ? state.records.some((r) => r.equipmentId === found.id && r.date === todayISO()) : false;
+  const lastRec = found ? activeRecords.filter((r) => r.equipmentId === found.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : null;
+  const doneToday = found ? activeRecords.some((r) => r.equipmentId === found.id && r.date === todayISO()) : false;
 
   if (mode === "form" && found) {
     return <InspectionForm equipment={found} onSaved={() => { setMode("detect"); setFound(null); }} onCancel={() => { setMode("detect"); setFound(null); }} />;

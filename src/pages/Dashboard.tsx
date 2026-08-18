@@ -4,13 +4,13 @@ import { Btn, CountUp, EQ_STATUS, I, Reveal, Ring, ResultChip } from "../compone
 import { faNum, formatDateJ, timeAgo, todayISO } from "../utils";
 
 export function Dashboard({ goScan }: { goScan: (code: string) => void }) {
-  const { state, user, can } = useStore();
+  const { state, user, can, activeRecords } = useStore();
   const today = todayISO();
   const [barsIn, setBarsIn] = useState(false);
   useEffect(() => { const t = setTimeout(() => setBarsIn(true), 150); return () => clearTimeout(t); }, []);
 
   const d = useMemo(() => {
-    const recToday = state.records.filter((r) => r.date === today);
+    const recToday = activeRecords.filter((r) => r.date === today);
     const activeEq = state.equipment.filter((e) => e.status === "active");
     const doneIds = new Set(recToday.map((r) => r.equipmentId));
     const pending = activeEq.filter((e) => !doneIds.has(e.id));
@@ -20,8 +20,8 @@ export function Dashboard({ goScan }: { goScan: (code: string) => void }) {
       const dt = new Date(); dt.setDate(dt.getDate() - (6 - i));
       return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     });
-    const counts = days.map((day) => state.records.filter((r) => r.date === day).length);
-    const noks = state.records
+    const counts = days.map((day) => activeRecords.filter((r) => r.date === day).length);
+    const noks = activeRecords
       .filter((r) => r.items.some((i) => i.result === "nok"))
       .flatMap((r) => r.items.filter((i) => i.result === "nok").map((i) => ({ r, i })))
       .sort((a, b) => b.r.createdAt.localeCompare(a.r.createdAt))

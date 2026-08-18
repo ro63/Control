@@ -16,7 +16,7 @@ const TYPES: { id: RepType; label: string; icon: "clipboard" | "calendar" | "cha
 ];
 
 export function ReportsPage() {
-  const { state, addLog, toast } = useStore();
+  const { state, activeRecords, addLog, toast } = useStore();
   const [type, setType] = useState<RepType>("daily");
   const [sub, setSub] = useState<"device" | "tech">("device");
   const [from, setFrom] = useState(weekStartISO());
@@ -26,19 +26,21 @@ export function ReportsPage() {
   const [fTech, setFTech] = useState("");
   const [fShift, setFShift] = useState("");
   const [fResult, setFResult] = useState("");
+  const [fItem, setFItem] = useState("");
   const [showFilter, setShowFilter] = useState(true);
 
   const eqInGroup = state.equipment.filter((e) => !fGroup || e.typeId === fGroup);
 
   const rows = useMemo(() => {
-    let r = state.records.filter((x) => (!from || x.date >= from) && (!to || x.date <= to));
+    let r = activeRecords.filter((x) => (!from || x.date >= from) && (!to || x.date <= to));
     if (fGroup) r = r.filter((x) => state.equipment.find((e) => e.id === x.equipmentId)?.typeId === fGroup);
     if (fEq) r = r.filter((x) => x.equipmentId === fEq);
     if (fTech) r = r.filter((x) => x.technicianId === fTech);
     if (fShift) r = r.filter((x) => x.shift === +fShift);
     if (fResult) r = r.filter((x) => (fResult === "nok" ? x.items.some((i) => i.result === "nok") : !x.items.some((i) => i.result === "nok")));
+    if (fItem) r = r.filter((x) => x.items.some((i) => i.itemId === fItem));
     return r;
-  }, [state, from, to, fGroup, fEq, fTech, fShift, fResult]);
+  }, [state, activeRecords, from, to, fGroup, fEq, fTech, fShift, fResult, fItem]);
 
   const totals = useMemo(() => {
     const items = rows.flatMap((r) => r.items);
@@ -181,6 +183,27 @@ export function ReportsPage() {
               <select className={sel} value={fResult} onChange={(e) => setFResult(e.target.value)}>
                 <option value="">همه نتایج</option><option value="ok">فقط سالم</option><option value="nok">فقط دارای NOK</option>
               </select>
+            </div>
+            {/* فیلتر بر اساس عنوان آیتم */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-mist flex items-center gap-1"><I name="checklist" size={13} />فیلتر بر اساس عنوان آیتم:</span>
+              <select className={`${sel} !min-w-[220px]`} value={fItem} onChange={(e) => setFItem(e.target.value)}>
+                <option value="">همه آیتم‌های چک‌لیست</option>
+                {state.sections.map((sec) => {
+                  const secItems = state.items.filter((i) => i.sectionId === sec.id);
+                  if (!secItems.length) return null;
+                  return (
+                    <optgroup key={sec.id} label={`— بخش ${sec.name} —`}>
+                      {secItems.map((i) => <option key={i.id} value={i.id}>{i.title}{i.unit ? ` (${i.unit})` : ""}</option>)}
+                    </optgroup>
+                  );
+                })}
+              </select>
+              {fItem && (
+                <button onClick={() => setFItem("")} className="inline-flex items-center gap-1 text-[11px] font-bold text-nok hover:bg-nokbg rounded-md px-2 py-1 transition-colors">
+                  <I name="x" size={11} />حذف فیلتر آیتم
+                </button>
+              )}
             </div>
           </div>
         )}
